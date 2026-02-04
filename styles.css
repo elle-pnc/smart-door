@@ -113,10 +113,12 @@ body {
   color: #e2e8f0;
 }
 
-.icon-button svg {
+.icon-button img {
   width: 18px;
   height: 18px;
-  fill: currentColor;
+  display: block;
+  filter: brightness(0) saturate(100%) invert(93%) sepia(3%) saturate(747%)
+    hue-rotate(182deg) brightness(103%) contrast(90%);
 }
 
 .page {

@@ -33,6 +33,7 @@ const DEFAULT_CONFIG = {
 let client = null;
 let history = [];
 let historyIndex = new Map();
+let historySignatureIndex = new Map();
 let historySort = "desc";
 let historyPage = 1;
 let historyPageSize = DEFAULT_PAGE_SIZE;
@@ -41,6 +42,7 @@ let lastStatusAt = history[0]?.timestamp || null;
 let lastMessageAt = history[0]?.timestamp || null;
 let usingFirebase = false;
 let historyRef = null;
+let lastEventSignature = null;
 
 const elements = {
   connectionDot: document.getElementById("connectionDot"),
@@ -169,6 +171,7 @@ function startClock() {
 elements.clearHistoryBtn.addEventListener("click", () => {
   history = [];
   historyIndex = new Map();
+  historySignatureIndex = new Map();
   historyPage = 1;
   if (usingFirebase && historyRef) {
     historyRef.remove();
@@ -213,6 +216,7 @@ function initializeHistory() {
   if (usingFirebase && historyRef) {
     history = [];
     historyIndex = new Map();
+    historySignatureIndex = new Map();
     historyRef
       .orderByChild("timestamp")
       .limitToLast(HISTORY_LIMIT)
@@ -229,6 +233,9 @@ function initializeHistory() {
   } else {
     history = loadHistory();
     historyIndex = new Map(history.map((entry) => [entry.key, entry]));
+    historySignatureIndex = new Map(
+      history.map((entry) => [makeSignature(entry), entry.key])
+    );
     renderHistory();
     renderStats();
     applyLastKnownStatus();
@@ -412,6 +419,11 @@ function applyLastKnownStatus() {
 function updateStatus(status) {
   const timestamp = Date.now();
   const normalized = status.toLowerCase();
+  const signature = `${normalized}_${timestamp}`;
+
+  if (signature === lastEventSignature) {
+    return;
+  }
 
   if (lastStatus && lastStatus.toLowerCase() === normalized) {
     lastMessageAt = timestamp;
@@ -425,6 +437,7 @@ function updateStatus(status) {
   triggerPulse(elements.doorStatus);
 
   lastMessageAt = timestamp;
+  lastEventSignature = signature;
 
   const warnings = [];
   if (
@@ -544,8 +557,9 @@ function renderStats() {
 
 function pushHistoryEntry(entry) {
   if (usingFirebase && historyRef) {
-    const ref = historyRef.push();
-    const withKey = { ...entry, key: ref.key };
+    const signature = makeSignature(entry);
+    const ref = historyRef.child(signature);
+    const withKey = { ...entry, key: signature };
     ref.set(withKey);
     upsertHistoryEntry(withKey);
     return;
@@ -560,12 +574,33 @@ function pushHistoryEntry(entry) {
 }
 
 function upsertHistoryEntry(entry) {
+  const signature = makeSignature(entry);
+  const existingKey = historySignatureIndex.get(signature);
+
+  if (existingKey && existingKey !== entry.key) {
+    const existing = historyIndex.get(existingKey);
+    if (existing) {
+      const mergedWarnings = mergeWarnings(existing.warnings, entry.warnings);
+      if (mergedWarnings.length !== (existing.warnings || []).length) {
+        existing.warnings = mergedWarnings;
+      }
+    }
+    return;
+  }
+
+  if (history.length && history[0].status.toLowerCase() === entry.status.toLowerCase()) {
+    return;
+  }
+
   if (historyIndex.has(entry.key)) {
     const existing = historyIndex.get(entry.key);
     Object.assign(existing, entry);
+    const existingSignature = makeSignature(existing);
+    historySignatureIndex.set(existingSignature, entry.key);
   } else {
     history.push(entry);
     historyIndex.set(entry.key, entry);
+    historySignatureIndex.set(signature, entry.key);
   }
 
   history.sort((a, b) => b.timestamp - a.timestamp);
@@ -578,6 +613,20 @@ function upsertHistoryEntry(entry) {
   renderHistory();
   renderStats();
   applyLastKnownStatus();
+}
+
+function makeSignature(entry) {
+  return `${entry.timestamp}_${entry.status.toLowerCase()}`;
+}
+
+function mergeWarnings(existingWarnings = [], incomingWarnings = []) {
+  const merged = [...existingWarnings];
+  incomingWarnings.forEach((warning) => {
+    if (!merged.find((item) => item.type === warning.type)) {
+      merged.push(warning);
+    }
+  });
+  return merged;
 }
 
 function refreshDerivedState() {
