@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Door Simulator</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Inter", "Segoe UI", Arial, sans-serif;
+        background: #f5f7fb;
+        color: #0f172a;
+      }
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 20px 24px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        margin-bottom: 18px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 26px;
+      }
+      .subtitle {
+        margin: 0;
+        color: #475569;
+      }
+      .row {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 13px;
+        color: #475569;
+      }
+      input {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        font-size: 14px;
+      }
+      .buttons {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      button {
+        border: none;
+        padding: 10px 16px;
+        border-radius: 10px;
+        background: #2563eb;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #0f172a;
+      }
+      button.ghost {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        color: #475569;
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #94a3b8;
+      }
+      .dot.connected {
+        background: #22c55e;
+      }
+      .dot.error {
+        background: #ef4444;
+      }
+      .log {
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 12px;
+        padding: 12px;
+        font-family: "SF Mono", "Segoe UI Mono", Menlo, monospace;
+        font-size: 12px;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+    </style>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js" defer></script>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <h1>Smart Door Simulator</h1>
+        <p class="subtitle">Publish open/close signals to HiveMQ Cloud</p>
+      </div>
+
+      <div class="card">
+        <div class="status">
+          <span id="connectionDot" class="dot"></span>
+          <span id="connectionText">Disconnected</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <label>
+            Host
+            <input id="hostInput" type="text" value="7be06ef8e93a46229e1aac740a263c7d.s1.eu.hivemq.cloud" />
+          </label>
+          <label>
+            WebSocket Port
+            <input id="portInput" type="number" value="8884" />
+          </label>
+          <label>
+            Topic
+            <input id="topicInput" type="text" value="smartdoor/status" />
+          </label>
+          <label>
+            Username
+            <input id="usernameInput" type="text" value="eru_SD" />
+          </label>
+          <label>
+            Password
+            <input id="passwordInput" type="password" value="Admin123" />
+          </label>
+        </div>
+        <div class="buttons" style="margin-top: 16px;">
+          <button id="connectBtn">Connect</button>
+          <button id="disconnectBtn" class="ghost" disabled>Disconnect</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="buttons">
+          <button id="openBtn" class="secondary" disabled>Send OPEN</button>
+          <button id="closeBtn" class="secondary" disabled>Send CLOSE</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top: 0;">Log</h3>
+        <div id="log" class="log"></div>
+      </div>
+    </div>
+
+    <script>
+      const elements = {
+        connectionDot: document.getElementById("connectionDot"),
+        connectionText: document.getElementById("connectionText"),
+        hostInput: document.getElementById("hostInput"),
+        portInput: document.getElementById("portInput"),
+        topicInput: document.getElementById("topicInput"),
+        usernameInput: document.getElementById("usernameInput"),
+        passwordInput: document.getElementById("passwordInput"),
+        connectBtn: document.getElementById("connectBtn"),
+        disconnectBtn: document.getElementById("disconnectBtn"),
+        openBtn: document.getElementById("openBtn"),
+        closeBtn: document.getElementById("closeBtn"),
+        log: document.getElementById("log"),
+      };
+
+      let client = null;
+
+      function log(message) {
+        const time = new Date().toLocaleTimeString("en-GB", {
+          hour12: false,
+        });
+        const line = document.createElement("div");
+        line.textContent = `[${time}] ${message}`;
+        elements.log.appendChild(line);
+        elements.log.scrollTop = elements.log.scrollHeight;
+      }
+
+      function setConnectionState(state, text) {
+        elements.connectionText.textContent = text;
+        elements.connectionDot.classList.remove("connected", "error");
+        if (state === "connected") {
+          elements.connectionDot.classList.add("connected");
+        } else if (state === "error") {
+          elements.connectionDot.classList.add("error");
+        }
+      }
+
+      function setControls(connected) {
+        elements.connectBtn.disabled = connected;
+        elements.disconnectBtn.disabled = !connected;
+        elements.openBtn.disabled = !connected;
+        elements.closeBtn.disabled = !connected;
+      }
+
+      elements.connectBtn.addEventListener("click", () => {
+        const host = elements.hostInput.value.trim();
+        const port = elements.portInput.value.trim();
+        const username = elements.usernameInput.value.trim();
+        const password = elements.passwordInput.value;
+
+        if (!host || !port) {
+          setConnectionState("error", "Missing host or port");
+          log("Please enter host and port.");
+          return;
+        }
+
+        const url = `wss://${host}:${port}/mqtt`;
+        const clientId = `smart-door-sim-${Math.random().toString(16).slice(2, 10)}`;
+
+        log(`Connecting to ${url} ...`);
+        setConnectionState("connecting", "Connecting...");
+        setControls(false);
+
+        client = mqtt.connect(url, {
+          clientId,
+          username: username || undefined,
+          password: password || undefined,
+          clean: true,
+          reconnectPeriod: 3000,
+        });
+
+        client.on("connect", () => {
+          setConnectionState("connected", "Connected");
+          setControls(true);
+          log("Connected.");
+        });
+
+        client.on("reconnect", () => {
+          setConnectionState("connecting", "Reconnecting...");
+          log("Reconnecting...");
+        });
+
+        client.on("error", (error) => {
+          setConnectionState("error", "Connection error");
+          log(`Error: ${error.message}`);
+        });
+
+        client.on("close", () => {
+          setConnectionState("disconnected", "Disconnected");
+          setControls(false);
+          log("Disconnected.");
+        });
+      });
+
+      elements.disconnectBtn.addEventListener("click", () => {
+        if (client) {
+          client.end(true);
+          client = null;
+        }
+      });
+
+      function publish(status) {
+        const topic = elements.topicInput.value.trim();
+        if (!client || !topic) {
+          log("Missing topic or not connected.");
+          return;
+        }
+        client.publish(topic, status, { qos: 0 }, (err) => {
+          if (err) {
+            log(`Publish failed: ${err.message}`);
+          } else {
+            log(`Published "${status}" to ${topic}`);
+          }
+        });
+      }
+
+      elements.openBtn.addEventListener("click", () => publish("open"));
+      elements.closeBtn.addEventListener("click", () => publish("close"));
+    </script>
+  </body>
+</html>
