@@ -411,8 +411,6 @@ function applyLastKnownStatus() {
 
 function updateStatus(status) {
   const timestamp = Date.now();
-<<<<<<< HEAD
-=======
   const normalized = status.toLowerCase();
 
   if (lastStatus && lastStatus.toLowerCase() === normalized) {
@@ -422,7 +420,6 @@ function updateStatus(status) {
     return;
   }
 
->>>>>>> bcc4c2a (Add smart door dashboard UI and tooling.)
   elements.doorStatus.textContent = status;
   elements.lastUpdate.textContent = `Last update: ${formatTime(timestamp)}`;
   triggerPulse(elements.doorStatus);
@@ -433,11 +430,7 @@ function updateStatus(status) {
   if (
     lastStatus &&
     lastStatus.toLowerCase() === "open" &&
-<<<<<<< HEAD
-    status.toLowerCase() === "closed" &&
-=======
     normalized === "closed" &&
->>>>>>> bcc4c2a (Add smart door dashboard UI and tooling.)
     lastStatusAt
   ) {
     const openDuration = timestamp - lastStatusAt;
@@ -729,20 +722,6 @@ function countRapidCycles(now) {
   const windowStart = now - WARNING_THRESHOLDS.rapidWindowMs;
   const recent = history
     .filter((entry) => entry.timestamp >= windowStart)
-<<<<<<< HEAD
-    .sort((a, b) => b.timestamp - a.timestamp);
-  let cycles = 0;
-  for (let i = 0; i < recent.length - 1; i += 1) {
-    const current = recent[i];
-    const next = recent[i + 1];
-    if (
-      current.status.toLowerCase() === "closed" &&
-      next.status.toLowerCase() === "open"
-    ) {
-      cycles += 1;
-    }
-  }
-=======
     .sort((a, b) => a.timestamp - b.timestamp);
 
   let cycles = 0;
@@ -756,7 +735,6 @@ function countRapidCycles(now) {
     prevStatus = current;
   }
 
->>>>>>> bcc4c2a (Add smart door dashboard UI and tooling.)
   return cycles;
 }
 
